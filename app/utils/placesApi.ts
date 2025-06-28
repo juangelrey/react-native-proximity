@@ -22,6 +22,7 @@ interface NearbyResponse {
 		icon?: string;
 	}[];
 	error_message?: string;
+	next_page_token?: string;
 }
 
 interface Params {
@@ -34,22 +35,35 @@ interface Params {
 	radius?: number;
 }
 
+export interface PlacesResponse {
+	places: Place[];
+	nextPageToken?: string;
+}
+
+interface Params {
+	latitude: number;
+	longitude: number;
+	keyword?: string;
+	type?: string;
+	radius?: number;
+	pageToken?: string;
+}
+
+const NEARBY_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+const TEXT_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
+
 export const getNearbyPlaces = async ({
 	latitude,
 	longitude,
 	keyword,
 	type = 'cafe',
 	radius = 1500,
-}: {
-	latitude: number;
-	longitude: number;
-	keyword?: string;
-	type?: string;
-	radius?: number;
-}): Promise<Place[]> => {
+	pageToken,
+}: Params): Promise<PlacesResponse> => {
 	const isTextSearch = Boolean(keyword && keyword.trim().length > 0);
+	let baseUrl: string;
 
-	const baseUrl = isTextSearch
+	baseUrl = isTextSearch
 		? 'https://maps.googleapis.com/maps/api/place/textsearch/json'
 		: 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
 
@@ -58,29 +72,46 @@ export const getNearbyPlaces = async ({
 		location: `${latitude},${longitude}`,
 		radius: radius.toString(),
 	});
-	if (isTextSearch) {
-		params.append('query', keyword!.trim());
+	if (pageToken) {
+		// Pagination: keep same endpoint type as original search
+		baseUrl = keyword ? TEXT_URL : NEARBY_URL;
+		params.append('pagetoken', pageToken);
 	} else {
-		params.append('type', type);
+		// First-page search
+		baseUrl = keyword ? TEXT_URL : NEARBY_URL;
+		params.append('location', `${latitude},${longitude}`);
+		params.append('radius', radius.toString());
+
+		if (keyword && keyword.trim().length > 0) {
+			params.append('query', keyword.trim());
+		} else {
+			params.append('type', type);
+		}
 	}
 
 	const url = `${baseUrl}?${params.toString()}`;
-	console.log(url);
-	const response = await fetch(url);
-	const data = (await response.json()) as NearbyResponse;
 
-	if (data.status !== 'OK') {
+	console.log(url);
+	const res = await fetch(url);
+	const data = (await res.json()) as NearbyResponse;
+
+	if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
 		throw new Error(data.error_message ?? `Places API error: ${data.status}`);
 	}
 
-	return data.results.map((p) => ({
+	const places: Place[] = data.results.map((p) => ({
 		id: p.place_id,
 		name: p.name,
-		vicinity: p.vicinity || '',
-		address: p.formatted_address || p.vicinity || '',
+		vicinity: p.vicinity ?? p.formatted_address ?? '',
+		address: p.vicinity ?? p.formatted_address ?? '',
 		geometry: p.geometry,
 		rating: p.rating,
 		user_ratings_total: p.user_ratings_total,
 		icon: p.icon,
 	}));
+
+	return {
+		places,
+		nextPageToken: data.next_page_token,
+	};
 };
