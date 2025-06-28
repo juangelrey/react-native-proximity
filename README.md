@@ -74,7 +74,3 @@ Now that the core functionality is in place, here are a few suggestions for taki
 - Draw a circle around the user’s location indicating search radius.
 - Show a polyline from the user to a selected place.
 - Animate the map to focus on a new region when the user picks a different type.
-
-```
-
-```
